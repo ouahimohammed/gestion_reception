@@ -70,7 +70,7 @@ function AppContent() {
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="max-w-7xl mx-auto text-center">
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              {translate('app.footer')} • © 2024 Warehouse System • <span className="font-semibold text-blue-600 dark:text-blue-400">v2.0.0</span>
+              {translate('app.footer')}  <span className="font-semibold text-blue-600 dark:text-blue-400">• Développé Par : OUAHI MOHAMED • </span>
             </p>
           </div>
         </div>
