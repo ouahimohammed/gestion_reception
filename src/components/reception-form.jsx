@@ -167,7 +167,7 @@ export function ReceptionForm({ onReceptionAdded }) {
             </div>
 
             {/* Numéro de palette */}
-            <div className="space-y-2 sm:space-y-3">
+            {/* <div className="space-y-2 sm:space-y-3">
               <label htmlFor="palletNumber" className="text-sm sm:text-base font-semibold flex items-center gap-2 text-gray-900 dark:text-white">
                 <Palette className="h-4 w-4" />
                 {translate('table.columns.palette')}
@@ -180,7 +180,7 @@ export function ReceptionForm({ onReceptionAdded }) {
                 placeholder="PAL-001"
                 className="w-full h-10 sm:h-12 px-3 sm:px-4 text-sm sm:text-base border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/50 dark:bg-slate-800/50 text-gray-900 dark:text-white font-mono transition-all duration-200 backdrop-blur-sm"
               />
-            </div>
+            </div> */}
 
             {/* Code-barres */}
             <div className="space-y-2 sm:space-y-3">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
-import { Search, Trash2, Download, Filter, ArrowUpDown, ChevronUp, ChevronDown, Package, Palette, Box, Calculator, Barcode, Calendar, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { Search, Trash2, Download, Filter, ArrowUpDown, ChevronUp, ChevronDown, Package, Box, Calculator, Barcode, Calendar, AlertTriangle, CheckCircle, XCircle, Printer } from 'lucide-react';
 import { storage } from '../lib/storage';
 import { useTheme } from './theme-provider';
 import { useTranslation } from '../lib/i18n';
@@ -18,6 +18,8 @@ export function ReceptionTable({ refreshTrigger }) {
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [showStatusFilter, setShowStatusFilter] = useState(false);
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState('');
   
   const { language } = useTheme();
   const t = useTranslation();
@@ -92,14 +94,14 @@ export function ReceptionTable({ refreshTrigger }) {
 
   const handleDelete = (id) => {
     const confirmMessage = translate('table.deleteConfirm');
-    if (!confirm(confirmMessage)) return;
-
-    try {
-      storage.deleteReception(id);
-      fetchReceptions();
-    } catch (error) {
-      const errorMessage = translate('table.deleteError');
-      alert(errorMessage);
+    if (confirm(confirmMessage)) {
+      try {
+        storage.deleteReception(id);
+        fetchReceptions();
+      } catch (error) {
+        const errorMessage = translate('table.deleteError');
+        alert(errorMessage);
+      }
     }
   };
 
@@ -136,9 +138,11 @@ export function ReceptionTable({ refreshTrigger }) {
     return sortDirection === 'asc' ? <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4" /> : <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4" />;
   };
 
+  // Fonction pour générer le PDF avec support arabe
   const generatePDF = () => {
     try {
       const doc = new jsPDF();
+      
       const totalUnits = calculateTotalUnits();
       
       doc.setFontSize(16);
@@ -156,7 +160,6 @@ export function ReceptionTable({ refreshTrigger }) {
 
       const headers = [
         translate('table.columns.product'),
-        translate('table.columns.palette'),
         translate('table.columns.cartons'),
         translate('table.columns.unitsPerCarton'),
         translate('table.columns.totalUnits'),
@@ -168,7 +171,6 @@ export function ReceptionTable({ refreshTrigger }) {
 
       const data = filteredReceptions.map(reception => [
         reception.product_name || '',
-        reception.pallet_number || '',
         (reception.cartons || 0).toString(),
         (reception.units_per_carton || 0).toString(),
         (reception.total_units || 0).toLocaleString(),
@@ -197,15 +199,14 @@ export function ReceptionTable({ refreshTrigger }) {
           fillColor: [245, 245, 245] 
         },
         columnStyles: {
-          0: { cellWidth: 30 },
+          0: { cellWidth: 35 },
           1: { cellWidth: 15 },
-          2: { cellWidth: 12 },
-          3: { cellWidth: 18 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 20 },
           4: { cellWidth: 18 },
-          5: { cellWidth: 15 },
-          6: { cellWidth: 18 },
-          7: { cellWidth: 18 },
-          8: { cellWidth: 15 }
+          5: { cellWidth: 20 },
+          6: { cellWidth: 20 },
+          7: { cellWidth: 15 }
         }
       });
 
@@ -223,6 +224,90 @@ export function ReceptionTable({ refreshTrigger }) {
     }
   };
 
+  // Fonction pour ouvrir la modal de sélection
+  const openDateModal = () => {
+    setShowDateModal(true);
+    setSelectedProduct('');
+  };
+
+  // Fonction pour générer la date d'expiration en gros
+ const generateExpirationDatePDF = () => {
+  if (!selectedProduct) {
+    alert('Veuillez sélectionner un produit');
+    return;
+  }
+
+  try {
+    const reception = filteredReceptions.find(r => r.id === selectedProduct);
+    if (!reception || !reception.expiration_date) {
+      alert('Date d\'expiration non trouvée pour ce produit');
+      return;
+    }
+
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const expirationDate = new Date(reception.expiration_date);
+    const month = (expirationDate.getMonth() + 1).toString().padStart(2, '0');
+    const year = expirationDate.getFullYear();
+    const dateText = `${month}/${year}`;
+
+    // Dimensions de la page A4 en landscape
+    const pageWidth = 297; // Largeur en landscape
+    const pageHeight = 210; // Hauteur en landscape
+
+    // Ajouter un cadre autour de la page
+    doc.setDrawColor(0, 0, 0); // Couleur noire
+    doc.setLineWidth(3); // Épaisseur du trait
+    doc.rect(10, 10, pageWidth - 20, pageHeight - 20); // Cadre avec marges
+
+    // Ajouter un deuxième cadre plus épais pour plus de visibilité
+    doc.setLineWidth(5);
+    doc.rect(15, 15, pageWidth - 30, pageHeight - 30);
+
+    // Texte en très gros (160pt)
+    doc.setFontSize(160);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'bold');
+
+    // Calculer la largeur et la hauteur du texte pour le centrage parfait
+    const textWidth = doc.getTextWidth(dateText);
+    
+    // Pour le centrage vertical, on utilise la hauteur approximative du texte
+    const textHeight = 160 * 0.35; // Approximation en mm (0.35mm par point)
+
+    // Centrer horizontalement et verticalement
+    const x = (pageWidth - textWidth) / 2;
+    const y = (pageHeight + textHeight / 2) / 2;
+
+    // Ajouter le texte parfaitement centré
+    doc.text(dateText, x, y);
+
+    doc.save(`EXP-${dateText.replace('/', '-')}.pdf`);
+    setShowDateModal(false);
+    setSelectedProduct('');
+
+  } catch (error) {
+    console.error('Erreur lors de la génération de la date:', error);
+    alert('Erreur lors de la génération de la date d\'expiration');
+  }
+};
+
+  // Obtenir les produits avec dates d'expiration
+  const getProductsWithExpiration = () => {
+    return filteredReceptions
+      .filter(reception => reception.expiration_date)
+      .map(reception => ({
+        id: reception.id,
+        name: reception.product_name,
+        expiration: reception.expiration_date,
+        displayDate: format(new Date(reception.expiration_date), 'MM/yyyy')
+      }));
+  };
+
   const statusOptions = [
     { value: 'all', label: translate('common.allStatus') },
     { value: translate('status.ok'), label: translate('status.ok') },
@@ -232,20 +317,22 @@ export function ReceptionTable({ refreshTrigger }) {
 
   const statusLabel = statusOptions.find(opt => opt.value === statusFilter)?.label || translate('common.allStatus');
 
+  const productsWithExpiration = getProductsWithExpiration();
+
   return (
-    <div className="bg-white/80 dark:bg-slate-900/80 rounded-2xl shadow-2xl border border-gray-200/50 dark:border-slate-700/50 backdrop-blur-xl">
+    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700">
       {/* Header */}
-      <div className="p-4 sm:p-6 border-b border-gray-200/50 dark:border-slate-700/50">
+      <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 sm:p-3 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl sm:rounded-2xl shadow-lg shadow-green-500/25">
+            <div className="p-2 sm:p-3 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl sm:rounded-2xl shadow-lg">
               <Package className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
             </div>
             <div>
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
                 {translate('table.title')}
               </h2>
-              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
                 Liste des réceptions enregistrées
               </p>
             </div>
@@ -259,7 +346,7 @@ export function ReceptionTable({ refreshTrigger }) {
                 placeholder={translate('table.searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 h-10 w-full border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/50 dark:bg-slate-800/50 text-gray-900 dark:text-white transition-all duration-200 backdrop-blur-sm text-sm"
+                className="pl-10 pr-4 h-10 w-full border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white transition-all duration-200 text-sm"
               />
             </div>
 
@@ -267,7 +354,7 @@ export function ReceptionTable({ refreshTrigger }) {
             <div className="relative w-full sm:w-auto">
               <button
                 onClick={() => setShowStatusFilter(!showStatusFilter)}
-                className="inline-flex items-center gap-2 h-10 px-4 w-full sm:w-auto justify-center border border-gray-300 dark:border-slate-600 rounded-lg bg-white/50 dark:bg-slate-800/50 text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 backdrop-blur-sm text-sm"
+                className="inline-flex items-center gap-2 h-10 px-4 w-full sm:w-auto justify-center border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               >
                 <Filter className="h-4 w-4" />
                 <span>{translate('common.status')}</span>
@@ -279,7 +366,7 @@ export function ReceptionTable({ refreshTrigger }) {
                     className="fixed inset-0 z-10" 
                     onClick={() => setShowStatusFilter(false)}
                   />
-                  <div className="absolute top-full left-0 mt-1 w-full sm:w-48 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg z-20">
+                  <div className="absolute top-full left-0 mt-1 w-full sm:w-48 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-20">
                     {statusOptions.map(option => (
                       <button
                         key={option.value}
@@ -287,7 +374,7 @@ export function ReceptionTable({ refreshTrigger }) {
                           setStatusFilter(option.value);
                           setShowStatusFilter(false);
                         }}
-                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-700 first:rounded-t-lg last:rounded-b-lg ${
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg ${
                           statusFilter === option.value 
                             ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' 
                             : 'text-gray-700 dark:text-gray-300'
@@ -301,11 +388,21 @@ export function ReceptionTable({ refreshTrigger }) {
               )}
             </div>
 
+            {/* Bouton Imprimer Date Expiration */}
+            <button
+              onClick={openDateModal}
+              disabled={productsWithExpiration.length === 0}
+              className="inline-flex items-center gap-2 h-10 px-4 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed text-white font-medium rounded-lg shadow-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 text-sm w-full sm:w-auto justify-center"
+            >
+              <Printer className="h-4 w-4" />
+              Imprimer Date Exp
+            </button>
+
             {/* Bouton PDF */}
             <button
               onClick={generatePDF}
               disabled={filteredReceptions.length === 0}
-              className="inline-flex items-center gap-2 h-10 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed text-white font-medium rounded-lg shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 backdrop-blur-sm text-sm w-full sm:w-auto justify-center"
+              className="inline-flex items-center gap-2 h-10 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed text-white font-medium rounded-lg shadow-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 text-sm w-full sm:w-auto justify-center"
             >
               <Download className="h-4 w-4" />
               {translate('table.downloadPDF')}
@@ -315,24 +412,24 @@ export function ReceptionTable({ refreshTrigger }) {
         
         {/* Statistiques en temps réel */}
         {filteredReceptions.length > 0 && (
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mt-4 sm:mt-6 p-4 sm:p-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-xl border border-blue-200 dark:border-blue-800 backdrop-blur-sm">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mt-4 sm:mt-6 p-4 sm:p-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-xl border border-blue-200 dark:border-blue-800">
             <div className="flex items-center gap-4 sm:gap-6">
               <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-bold text-blue-600 flex items-center gap-2">
+                <div className="text-2xl sm:text-3xl font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2">
                   <Box className="h-5 w-5 sm:h-7 sm:w-7" />
                   {filteredReceptions.length}
                 </div>
-                <div className="text-xs sm:text-sm text-blue-600/70 font-medium">
+                <div className="text-xs sm:text-sm text-blue-600/70 dark:text-blue-400/70 font-medium">
                   {translate('table.totalReceptions')}
                 </div>
               </div>
               <div className="h-8 sm:h-12 w-px bg-blue-200 dark:bg-blue-800"></div>
               <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-bold text-indigo-600 flex items-center gap-2">
+                <div className="text-2xl sm:text-3xl font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
                   <Calculator className="h-5 w-5 sm:h-7 sm:w-7" />
                   {calculateTotalUnits().toLocaleString()}
                 </div>
-                <div className="text-xs sm:text-sm text-indigo-600/70 font-medium">
+                <div className="text-xs sm:text-sm text-indigo-600/70 dark:text-indigo-400/70 font-medium">
                   {translate('table.totalUnits')}
                 </div>
               </div>
@@ -353,6 +450,70 @@ export function ReceptionTable({ refreshTrigger }) {
         )}
       </div>
       
+      {/* Modal de sélection de produit */}
+      {showDateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-hidden">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                Sélectionner un produit
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                Choisissez le produit pour imprimer sa date d'expiration
+              </p>
+            </div>
+            
+            <div className="p-6 max-h-96 overflow-y-auto">
+              {productsWithExpiration.length === 0 ? (
+                <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+                  Aucun produit avec date d'expiration trouvé
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {productsWithExpiration.map((product) => (
+                    <button
+                      key={product.id}
+                      onClick={() => setSelectedProduct(product.id)}
+                      className={`w-full text-left p-4 rounded-lg border-2 transition-all duration-200 ${
+                        selectedProduct === product.id
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-700'
+                      }`}
+                    >
+                      <div className="font-semibold text-gray-900 dark:text-white">
+                        {product.name}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        Expire le: {product.displayDate}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDateModal(false);
+                  setSelectedProduct('');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={generateExpirationDatePDF}
+                disabled={!selectedProduct}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed text-white rounded-lg transition-all duration-200"
+              >
+                Imprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Table Content */}
       <div className="p-4 sm:p-6">
         {isLoading ? (
@@ -371,7 +532,7 @@ export function ReceptionTable({ refreshTrigger }) {
                   setSearchTerm('');
                   setStatusFilter('all');
                 }}
-                className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white/50 dark:bg-slate-800/50 text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm backdrop-blur-sm"
+                className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               >
                 <Filter className="h-4 w-4" />
                 {translate('common.resetFilters')}
@@ -379,13 +540,12 @@ export function ReceptionTable({ refreshTrigger }) {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">
-            <table className="w-full min-w-[800px]">
+          <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+            <table className="w-full min-w-[700px]">
               <thead>
-                <tr className="bg-gray-50/50 dark:bg-slate-800/50 backdrop-blur-sm">
+                <tr className="bg-gray-50 dark:bg-gray-800">
                   {[
                     { key: 'product_name', icon: <Package className="h-3 w-3 sm:h-4 sm:w-4" /> },
-                    { key: 'pallet_number', icon: <Palette className="h-3 w-3 sm:h-4 sm:w-4" /> },
                     { key: 'cartons', icon: <Box className="h-3 w-3 sm:h-4 sm:w-4" /> },
                     { key: 'units_per_carton', icon: <Calculator className="h-3 w-3 sm:h-4 sm:w-4" /> },
                     { key: 'total_units', icon: <Calculator className="h-3 w-3 sm:h-4 sm:w-4" /> },
@@ -397,7 +557,7 @@ export function ReceptionTable({ refreshTrigger }) {
                   ].map(({ key, icon }) => (
                     <th
                       key={key}
-                      className="cursor-pointer px-3 py-3 text-left text-xs sm:text-sm font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors duration-150"
+                      className="cursor-pointer px-3 py-3 text-left text-xs sm:text-sm font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150"
                       onClick={() => handleSort(key)}
                     >
                       <div className="flex items-center gap-1 sm:gap-2">
@@ -412,25 +572,19 @@ export function ReceptionTable({ refreshTrigger }) {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredReceptions.map((reception) => (
                   <tr 
                     key={reception.id} 
-                    className="hover:bg-gray-50 dark:hover:bg-slate-800/30 transition-colors duration-150 group"
+                    className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors duration-150 group"
                   >
                     <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">
-                      <div className="flex items-center gap-2 max-w-[120px] sm:max-w-[200px]">
+                      <div className="flex items-center gap-2 max-w-[150px] sm:max-w-[200px]">
                         <Package className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 flex-shrink-0" />
                         <div className="truncate" title={reception.product_name}>
                           {reception.product_name}
                         </div>
                       </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono border border-gray-300 dark:border-slate-600 rounded-full bg-white/50 dark:bg-slate-800/50 text-gray-700 dark:text-gray-300 backdrop-blur-sm">
-                        <Palette className="h-3 w-3" />
-                        {reception.pallet_number || ''}
-                      </span>
                     </td>
                     <td className="px-3 py-3">
                       <div className="text-center font-semibold flex items-center justify-center gap-1 text-gray-900 dark:text-white">
@@ -451,7 +605,7 @@ export function ReceptionTable({ refreshTrigger }) {
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <code className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-slate-800 rounded text-gray-900 dark:text-gray-100 font-mono">
+                      <code className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 rounded text-gray-900 dark:text-gray-100 font-mono">
                         <Barcode className="h-3 w-3" />
                         {reception.barcode || ''}
                       </code>
@@ -487,7 +641,7 @@ export function ReceptionTable({ refreshTrigger }) {
                     <td className="px-3 py-3">
                       <button
                         onClick={() => handleDelete(reception.id)}
-                        className="opacity-0 group-hover:opacity-100 transition-all duration-200 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1.5 sm:p-2 rounded-lg transform hover:scale-110"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1.5 sm:p-2 rounded-lg transition-all duration-200 transform hover:scale-110"
                         title="Supprimer"
                       >
                         <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -497,8 +651,8 @@ export function ReceptionTable({ refreshTrigger }) {
                 ))}
                 
                 {/* Ligne du total */}
-                <tr className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 font-bold border-t-2 border-gray-300 dark:border-slate-600">
-                  <td colSpan={4} className="px-3 py-3 text-right text-sm sm:text-lg text-gray-900 dark:text-white">
+                <tr className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 font-bold border-t-2 border-gray-300 dark:border-gray-600">
+                  <td colSpan={3} className="px-3 py-3 text-right text-sm sm:text-lg text-gray-900 dark:text-white">
                     {translate('table.generalTotal')} :
                   </td>
                   <td className="px-3 py-3 text-blue-600 dark:text-blue-400 text-sm sm:text-lg">

@@ -19,7 +19,6 @@ export function ThemeProvider({
   ...props
 }) {
   const [theme, setTheme] = useState(() => {
-    // Vérifier si on est côté client
     if (typeof window !== 'undefined') {
       return localStorage.getItem(storageKey) || defaultTheme;
     }
@@ -37,18 +36,26 @@ export function ThemeProvider({
 
   useEffect(() => {
     const root = window.document.documentElement;
+    const body = window.document.body;
     
     // Supprimer les classes précédentes
     root.classList.remove('light', 'dark');
+    body.classList.remove('light', 'dark');
 
+    let currentTheme = theme;
+    
     if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches 
+      currentTheme = window.matchMedia('(prefers-color-scheme: dark)').matches 
         ? 'dark' 
         : 'light';
-      root.classList.add(systemTheme);
-    } else {
-      root.classList.add(theme);
     }
+
+    root.classList.add(currentTheme);
+    body.classList.add(currentTheme);
+    
+    // Mettre à jour les attributs de couleur
+    root.style.colorScheme = currentTheme;
+    
   }, [theme]);
 
   useEffect(() => {
@@ -83,7 +90,6 @@ export function ThemeProvider({
   );
 }
 
-// Hook corrigé avec vérification
 export const useTheme = () => {
   const context = useContext(ThemeProviderContext);
   if (context === undefined) {

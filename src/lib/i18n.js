@@ -40,8 +40,8 @@ export const translations = {
       columns: {
         product: "Produit",
         product_name: "Produit",
-        palette: "Palette", 
-        pallet_number: "Palette",
+        // palette: "Palette", 
+        // pallet_number: "Palette",
         cartons: "Cartons",
         unitsPerCarton: "Unités/Carton",
         units_per_carton: "Unités/Carton",
