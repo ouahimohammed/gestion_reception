@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { differenceInMonths } from 'date-fns';
-import { Calendar as CalendarIcon, Plus, Calculator, Package, Barcode, Palette } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, Calculator, Package, Barcode, Palette, Edit, CalculatorIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { storage } from '../lib/storage';
 import { useTheme } from '../components/theme-provider';
@@ -8,7 +8,6 @@ import { useTranslation } from '../lib/i18n';
 
 export function ReceptionForm({ onReceptionAdded }) {
   const [productName, setProductName] = useState('');
-  const [palletNumber, setPalletNumber] = useState('');
   const [cartons, setCartons] = useState('');
   const [unitsPerCarton, setUnitsPerCarton] = useState('');
   const [barcode, setBarcode] = useState('');
@@ -16,6 +15,12 @@ export function ReceptionForm({ onReceptionAdded }) {
   const [expirationDate, setExpirationDate] = useState();
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // États pour le calcul automatique
+  const [cartonsPerRow, setCartonsPerRow] = useState('');
+  const [rowsPerLevel, setRowsPerLevel] = useState('');
+  const [numberOfPallets, setNumberOfPallets] = useState('');
+  const [cartonsPerPallet, setCartonsPerPallet] = useState(''); // Calculé automatiquement
+
   const { language } = useTheme();
   const t = useTranslation();
   
@@ -27,6 +32,40 @@ export function ReceptionForm({ onReceptionAdded }) {
       return key;
     }
   };
+
+  // Calcul automatique du nombre de cartons par palette
+  const calculateCartonsPerPallet = () => {
+    if (cartonsPerRow && rowsPerLevel) {
+      return parseInt(cartonsPerRow) * parseInt(rowsPerLevel);
+    }
+    return 0;
+  };
+
+  // Calcul automatique du nombre total de cartons
+  const calculateTotalCartons = () => {
+    const cartonsPerPallet = calculateCartonsPerPallet();
+    if (cartonsPerPallet > 0 && numberOfPallets) {
+      return cartonsPerPallet * parseInt(numberOfPallets);
+    }
+    return 0;
+  };
+
+  // Utiliser useEffect pour mettre à jour les calculs automatiquement
+  useEffect(() => {
+    const calculatedCartonsPerPallet = calculateCartonsPerPallet();
+    if (calculatedCartonsPerPallet > 0) {
+      setCartonsPerPallet(calculatedCartonsPerPallet.toString());
+    } else {
+      setCartonsPerPallet('');
+    }
+  }, [cartonsPerRow, rowsPerLevel]);
+
+  useEffect(() => {
+    const calculatedTotalCartons = calculateTotalCartons();
+    if (calculatedTotalCartons > 0) {
+      setCartons(calculatedTotalCartons.toString());
+    }
+  }, [cartonsPerPallet, numberOfPallets]);
 
   const totalUnits = cartons && unitsPerCarton
     ? parseInt(cartons) * parseInt(unitsPerCarton)
@@ -73,7 +112,6 @@ export function ReceptionForm({ onReceptionAdded }) {
     try {
       const receptionData = {
         product_name: productName,
-        pallet_number: palletNumber || null,
         cartons: parseInt(cartons),
         units_per_carton: parseInt(unitsPerCarton),
         total_units: totalUnits,
@@ -83,18 +121,28 @@ export function ReceptionForm({ onReceptionAdded }) {
         shelf_life_months: shelfLifeMonths,
         status: calculateStatus(),
         created_at: new Date().toISOString(),
+        // Sauvegarder les données de configuration des palettes
+        pallet_config: {
+          cartons_per_row: parseInt(cartonsPerRow) || 0,
+          rows_per_level: parseInt(rowsPerLevel) || 0,
+          number_of_pallets: parseInt(numberOfPallets) || 0,
+          cartons_per_pallet: parseInt(cartonsPerPallet) || 0
+        }
       };
 
       storage.addReception(receptionData);
       
       // Réinitialiser le formulaire
       setProductName('');
-      setPalletNumber('');
       setCartons('');
       setUnitsPerCarton('');
       setBarcode('');
       setProductionDate(undefined);
       setExpirationDate(undefined);
+      setCartonsPerRow('');
+      setRowsPerLevel('');
+      setNumberOfPallets('');
+      setCartonsPerPallet('');
       
       onReceptionAdded();
     } catch (error) {
@@ -115,6 +163,33 @@ export function ReceptionForm({ onReceptionAdded }) {
       setProductionDate(date);
     } else {
       setExpirationDate(date);
+    }
+  };
+
+  const handlePalletConfigChange = (field, value) => {
+    const numValue = value.replace(/\D/g, '');
+    
+    switch (field) {
+      case 'cartonsPerRow':
+        setCartonsPerRow(numValue);
+        break;
+      case 'rowsPerLevel':
+        setRowsPerLevel(numValue);
+        break;
+      case 'numberOfPallets':
+        setNumberOfPallets(numValue);
+        break;
+    }
+  };
+
+  const handleManualCartonsChange = (value) => {
+    setCartons(value);
+    // Si l'utilisateur modifie manuellement les cartons, réinitialiser le calcul automatique
+    if (value && (cartonsPerRow || rowsPerLevel || numberOfPallets)) {
+      setCartonsPerRow('');
+      setRowsPerLevel('');
+      setNumberOfPallets('');
+      setCartonsPerPallet('');
     }
   };
 
@@ -166,22 +241,6 @@ export function ReceptionForm({ onReceptionAdded }) {
               />
             </div>
 
-            {/* Numéro de palette */}
-            {/* <div className="space-y-2 sm:space-y-3">
-              <label htmlFor="palletNumber" className="text-sm sm:text-base font-semibold flex items-center gap-2 text-gray-900 dark:text-white">
-                <Palette className="h-4 w-4" />
-                {translate('table.columns.palette')}
-              </label>
-              <input
-                id="palletNumber"
-                type="text"
-                value={palletNumber}
-                onChange={(e) => setPalletNumber(e.target.value)}
-                placeholder="PAL-001"
-                className="w-full h-10 sm:h-12 px-3 sm:px-4 text-sm sm:text-base border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/50 dark:bg-slate-800/50 text-gray-900 dark:text-white font-mono transition-all duration-200 backdrop-blur-sm"
-              />
-            </div> */}
-
             {/* Code-barres */}
             <div className="space-y-2 sm:space-y-3">
               <label htmlFor="barcode" className="text-sm sm:text-base font-semibold flex items-center gap-2 text-gray-900 dark:text-white">
@@ -201,6 +260,109 @@ export function ReceptionForm({ onReceptionAdded }) {
             </div>
           </div>
 
+          {/* Section Configuration Palette (Optionnel) */}
+          <div className="bg-blue-50/50 dark:bg-blue-900/20 rounded-xl p-4 sm:p-6 border border-blue-200 dark:border-blue-800">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Palette className="h-5 w-5" />
+                Calcul Automatique (Optionnel)
+              </h3>
+              
+              <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+                {cartonsPerRow && rowsPerLevel ? '✓ Calcul automatique activé' : '📝 Saisie manuelle disponible'}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              {/* Cartons par rangée */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Cartons par rangée *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={cartonsPerRow}
+                  onChange={(e) => handlePalletConfigChange('cartonsPerRow', e.target.value)}
+                  placeholder="Ex: 5"
+                  className="w-full h-10 px-3 text-sm border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/50 dark:bg-slate-800/50 text-gray-900 dark:text-white text-center transition-all duration-200"
+                />
+              </div>
+
+              {/* Rangées par niveau */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Rangées par niveau *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={rowsPerLevel}
+                  onChange={(e) => handlePalletConfigChange('rowsPerLevel', e.target.value)}
+                  placeholder="Ex: 4"
+                  className="w-full h-10 px-3 text-sm border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/50 dark:bg-slate-800/50 text-gray-900 dark:text-white text-center transition-all duration-200"
+                />
+              </div>
+
+              {/* Nombre de palettes */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Nombre de palettes
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={numberOfPallets}
+                  onChange={(e) => handlePalletConfigChange('numberOfPallets', e.target.value)}
+                  placeholder="Ex: 2"
+                  className="w-full h-10 px-3 text-sm border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/50 dark:bg-slate-800/50 text-gray-900 dark:text-white text-center transition-all duration-200"
+                />
+              </div>
+            </div>
+
+            {/* Résultats du calcul automatique */}
+            {(cartonsPerRow || rowsPerLevel) && (
+              <div className="space-y-3">
+                {/* Calcul par palette */}
+                <div className="p-3 bg-white/50 dark:bg-slate-800/50 rounded-lg border border-green-200 dark:border-green-700">
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium">Cartons par palette :</span>
+                      <span className="font-semibold text-green-600 dark:text-green-400">
+                        {cartonsPerRow} × {rowsPerLevel} = {calculateCartonsPerPallet()} cartons/palette
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Calcul total si nombre de palettes renseigné */}
+                {numberOfPallets && (
+                  <div className="p-3 bg-white/50 dark:bg-slate-800/50 rounded-lg border border-blue-200 dark:border-blue-700">
+                    <div className="text-sm text-gray-700 dark:text-gray-300">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">Total cartons :</span>
+                        <span className="font-semibold text-blue-600 dark:text-blue-400">
+                          {calculateCartonsPerPallet()} × {numberOfPallets} = {calculateTotalCartons()} cartons
+                        </span>
+                      </div>
+                      <div className="mt-2 text-green-600 dark:text-green-400 text-sm">
+                        ✓ Appliqué automatiquement au nombre de cartons
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!(cartonsPerRow && rowsPerLevel) && (
+              <div className="p-3 bg-yellow-50/50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
+                <div className="text-sm text-yellow-700 dark:text-yellow-400">
+                  💡 <strong>Astuce :</strong> Renseignez "Cartons par rangée" et "Rangées par niveau" pour calculer automatiquement le nombre de cartons par palette.
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Section Quantités */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             {/* Cartons */}
@@ -213,11 +375,22 @@ export function ReceptionForm({ onReceptionAdded }) {
                 type="number"
                 min="1"
                 value={cartons}
-                onChange={(e) => setCartons(e.target.value)}
+                onChange={(e) => handleManualCartonsChange(e.target.value)}
                 required
                 placeholder={translate('form.cartonsPlaceholder')}
-                className="w-full h-10 sm:h-12 px-3 sm:px-4 text-sm sm:text-base border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/50 dark:bg-slate-800/50 text-gray-900 dark:text-white text-center transition-all duration-200 backdrop-blur-sm"
+                className={`w-full h-10 sm:h-12 px-3 sm:px-4 text-sm sm:text-base border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center transition-all duration-200 backdrop-blur-sm ${
+                  cartonsPerRow && rowsPerLevel
+                    ? 'border-green-200 dark:border-green-800 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 text-green-700 dark:text-green-300 font-bold'
+                    : 'border-gray-300 dark:border-slate-600 bg-white/50 dark:bg-slate-800/50 text-gray-900 dark:text-white'
+                }`}
               />
+              <p className={`text-xs text-center ${
+                cartonsPerRow && rowsPerLevel
+                  ? 'text-green-600 dark:text-green-400' 
+                  : 'text-blue-600 dark:text-blue-400'
+              }`}>
+                {cartonsPerRow && rowsPerLevel ? '✓ Calculé automatiquement' : '📝 Saisie manuelle'}
+              </p>
             </div>
 
             {/* Unités par carton */}

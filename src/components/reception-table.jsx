@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
-import { Search, Trash2, Download, Filter, ArrowUpDown, ChevronUp, ChevronDown, Package, Box, Calculator, Barcode, Calendar, AlertTriangle, CheckCircle, XCircle, Printer } from 'lucide-react';
+import { Search, Trash2, Download, Filter, ArrowUpDown, ChevronUp, ChevronDown, Package, Box, Calculator, Barcode, Calendar, AlertTriangle, CheckCircle, XCircle, Printer, Palette, Edit, Save, X } from 'lucide-react';
 import { storage } from '../lib/storage';
 import { useTheme } from './theme-provider';
 import { useTranslation } from '../lib/i18n';
@@ -20,7 +20,13 @@ export function ReceptionTable({ refreshTrigger }) {
   const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [showDateModal, setShowDateModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState('');
-  
+  const [editingPallet, setEditingPallet] = useState(null);
+  const [editPalletData, setEditPalletData] = useState({
+    cartons_per_row: '',
+    rows_per_level: '',
+    number_of_pallets: ''
+  });
+
   const { language } = useTheme();
   const t = useTranslation();
   
@@ -138,7 +144,204 @@ export function ReceptionTable({ refreshTrigger }) {
     return sortDirection === 'asc' ? <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4" /> : <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4" />;
   };
 
-  // Fonction pour générer le PDF avec support arabe
+  // Fonction pour démarrer l'édition
+  const startEditPallet = (reception) => {
+    setEditingPallet(reception.id);
+    setEditPalletData({
+      cartons_per_row: reception.pallet_config?.cartons_per_row || '',
+      rows_per_level: reception.pallet_config?.rows_per_level || '',
+      number_of_pallets: reception.pallet_config?.number_of_pallets || ''
+    });
+  };
+
+  // Fonction pour annuler l'édition
+  const cancelEditPallet = () => {
+    setEditingPallet(null);
+    setEditPalletData({
+      cartons_per_row: '',
+      rows_per_level: '',
+      number_of_pallets: ''
+    });
+  };
+
+  // Fonction pour sauvegarder les modifications
+  const saveEditPallet = (receptionId) => {
+    try {
+      const updatedReception = receptions.find(r => r.id === receptionId);
+      if (updatedReception) {
+        // Calculer le nouveau nombre de cartons si tous les champs sont remplis
+        let newCartons = updatedReception.cartons;
+        if (editPalletData.cartons_per_row && editPalletData.rows_per_level && editPalletData.number_of_pallets) {
+          newCartons = parseInt(editPalletData.cartons_per_row) * 
+                       parseInt(editPalletData.rows_per_level) * 
+                       parseInt(editPalletData.number_of_pallets);
+        }
+
+        const updatedData = {
+          ...updatedReception,
+          cartons: newCartons,
+          total_units: newCartons * updatedReception.units_per_carton,
+          pallet_config: {
+            ...updatedReception.pallet_config,
+            cartons_per_row: parseInt(editPalletData.cartons_per_row) || 0,
+            rows_per_level: parseInt(editPalletData.rows_per_level) || 0,
+            number_of_pallets: parseInt(editPalletData.number_of_pallets) || 0,
+            use_auto_calculation: true
+          }
+        };
+
+        storage.updateReception(receptionId, updatedData);
+        fetchReceptions();
+        setEditingPallet(null);
+      }
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour:', error);
+      alert('Erreur lors de la mise à jour des données de palette');
+    }
+  };
+
+  // Fonction pour afficher la configuration de palette
+  // Dans la fonction renderPalletConfig du ReceptionTable.js, modifiez cette partie :
+
+// Fonction pour afficher la configuration de palette
+const renderPalletConfig = (reception) => {
+  if (!reception.pallet_config) {
+    return (
+      <div className="text-center">
+        <span className="text-xs text-gray-500 dark:text-gray-400">Non configuré</span>
+        <button
+          onClick={() => startEditPallet(reception)}
+          className="mt-1 inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+        >
+          <Edit className="h-3 w-3" />
+          Ajouter
+        </button>
+      </div>
+    );
+  }
+  
+  const { cartons_per_row, rows_per_level, number_of_pallets, cartons_per_pallet } = reception.pallet_config;
+  
+  if (editingPallet === reception.id) {
+    return (
+      <div className="space-y-2 p-2 bg-white dark:bg-gray-800 rounded border">
+        <div className="grid grid-cols-3 gap-1 text-xs">
+          <div className="space-y-1">
+            <label className="text-[10px] text-gray-500">Rangée</label>
+            <input
+              type="number"
+              value={editPalletData.cartons_per_row}
+              onChange={(e) => setEditPalletData(prev => ({...prev, cartons_per_row: e.target.value}))}
+              placeholder="Rangée"
+              className="w-full px-1 py-1 border rounded text-center"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] text-gray-500">Niveau</label>
+            <input
+              type="number"
+              value={editPalletData.rows_per_level}
+              onChange={(e) => setEditPalletData(prev => ({...prev, rows_per_level: e.target.value}))}
+              placeholder="Niveau"
+              className="w-full px-1 py-1 border rounded text-center"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] text-gray-500">Palettes</label>
+            <input
+              type="number"
+              value={editPalletData.number_of_pallets}
+              onChange={(e) => setEditPalletData(prev => ({...prev, number_of_pallets: e.target.value}))}
+              placeholder="Palettes"
+              className="w-full px-1 py-1 border rounded text-center"
+            />
+          </div>
+        </div>
+        
+        {/* Calcul automatique en temps réel */}
+        {editPalletData.cartons_per_row && editPalletData.rows_per_level && (
+          <div className="text-xs text-green-600 dark:text-green-400 text-center">
+            {editPalletData.cartons_per_row} × {editPalletData.rows_per_level} = {editPalletData.cartons_per_row * editPalletData.rows_per_level} cartons/palette
+          </div>
+        )}
+        
+        <div className="flex gap-1 justify-center">
+          <button
+            onClick={() => saveEditPallet(reception.id)}
+            className="p-1 bg-green-500 hover:bg-green-600 text-white rounded"
+            title="Sauvegarder"
+          >
+            <Save className="h-3 w-3" />
+          </button>
+          <button
+            onClick={cancelEditPallet}
+            className="p-1 bg-red-500 hover:bg-red-600 text-white rounded"
+            title="Annuler"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!cartons_per_row || !rows_per_level) {
+    return (
+      <div className="text-center">
+        <span className="text-xs text-gray-500 dark:text-gray-400">Configuration incomplète</span>
+        <button
+          onClick={() => startEditPallet(reception)}
+          className="mt-1 inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+        >
+          <Edit className="h-3 w-3" />
+          Modifier
+        </button>
+      </div>
+    );
+  }
+  
+  const calculatedCartonsPerPallet = cartons_per_row * rows_per_level;
+  const calculatedTotalCartons = calculatedCartonsPerPallet * (number_of_pallets || 1);
+  const matchesActual = calculatedTotalCartons === reception.cartons;
+  
+  return (
+    <div className="text-center group">
+      <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+        <div>
+          <span className="font-medium">{cartons_per_row} × {rows_per_level}</span>
+          <div className="text-[10px] text-green-600 dark:text-green-400">
+            = {calculatedCartonsPerPallet} cartons/palette
+          </div>
+        </div>
+        {number_of_pallets && (
+          <div>
+            <span className="font-medium">× {number_of_pallets} palettes</span>
+            <div className="text-[10px] text-blue-600 dark:text-blue-400">
+              = {calculatedTotalCartons} cartons totaux
+            </div>
+          </div>
+        )}
+        {matchesActual ? (
+          <div className="text-green-600 dark:text-green-400 text-[10px] mt-1">
+            ✓ Correspond aux cartons
+          </div>
+        ) : (
+          <div className="text-orange-600 dark:text-orange-400 text-[10px] mt-1">
+            ⚠️ Différent des cartons
+          </div>
+        )}
+      </div>
+      <button
+        onClick={() => startEditPallet(reception)}
+        className="mt-1 opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded transition-all"
+      >
+        <Edit className="h-3 w-3" />
+        Modifier
+      </button>
+    </div>
+  );
+};
+  // Fonction pour générer le PDF
   const generatePDF = () => {
     try {
       const doc = new jsPDF();
@@ -231,70 +434,70 @@ export function ReceptionTable({ refreshTrigger }) {
   };
 
   // Fonction pour générer la date d'expiration en gros
- const generateExpirationDatePDF = () => {
-  if (!selectedProduct) {
-    alert('Veuillez sélectionner un produit');
-    return;
-  }
-
-  try {
-    const reception = filteredReceptions.find(r => r.id === selectedProduct);
-    if (!reception || !reception.expiration_date) {
-      alert('Date d\'expiration non trouvée pour ce produit');
+  const generateExpirationDatePDF = () => {
+    if (!selectedProduct) {
+      alert('Veuillez sélectionner un produit');
       return;
     }
 
-    const doc = new jsPDF({
-      orientation: 'landscape',
-      unit: 'mm',
-      format: 'a4'
-    });
+    try {
+      const reception = filteredReceptions.find(r => r.id === selectedProduct);
+      if (!reception || !reception.expiration_date) {
+        alert('Date d\'expiration non trouvée pour ce produit');
+        return;
+      }
 
-    const expirationDate = new Date(reception.expiration_date);
-    const month = (expirationDate.getMonth() + 1).toString().padStart(2, '0');
-    const year = expirationDate.getFullYear();
-    const dateText = `${month}/${year}`;
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
 
-    // Dimensions de la page A4 en landscape
-    const pageWidth = 297; // Largeur en landscape
-    const pageHeight = 210; // Hauteur en landscape
+      const expirationDate = new Date(reception.expiration_date);
+      const month = (expirationDate.getMonth() + 1).toString().padStart(2, '0');
+      const year = expirationDate.getFullYear();
+      const dateText = `${month}/${year}`;
 
-    // Ajouter un cadre autour de la page
-    doc.setDrawColor(0, 0, 0); // Couleur noire
-    doc.setLineWidth(3); // Épaisseur du trait
-    doc.rect(10, 10, pageWidth - 20, pageHeight - 20); // Cadre avec marges
+      // Dimensions de la page A4 en landscape
+      const pageWidth = 297; // Largeur en landscape
+      const pageHeight = 210; // Hauteur en landscape
 
-    // Ajouter un deuxième cadre plus épais pour plus de visibilité
-    doc.setLineWidth(5);
-    doc.rect(15, 15, pageWidth - 30, pageHeight - 30);
+      // Ajouter un cadre autour de la page
+      doc.setDrawColor(0, 0, 0); // Couleur noire
+      doc.setLineWidth(3); // Épaisseur du trait
+      doc.rect(10, 10, pageWidth - 20, pageHeight - 20); // Cadre avec marges
 
-    // Texte en très gros (160pt)
-    doc.setFontSize(160);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont(undefined, 'bold');
+      // Ajouter un deuxième cadre plus épais pour plus de visibilité
+      doc.setLineWidth(5);
+      doc.rect(15, 15, pageWidth - 30, pageHeight - 30);
 
-    // Calculer la largeur et la hauteur du texte pour le centrage parfait
-    const textWidth = doc.getTextWidth(dateText);
-    
-    // Pour le centrage vertical, on utilise la hauteur approximative du texte
-    const textHeight = 160 * 0.35; // Approximation en mm (0.35mm par point)
+      // Texte en très gros (160pt)
+      doc.setFontSize(160);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'bold');
 
-    // Centrer horizontalement et verticalement
-    const x = (pageWidth - textWidth) / 2;
-    const y = (pageHeight + textHeight / 2) / 2;
+      // Calculer la largeur et la hauteur du texte pour le centrage parfait
+      const textWidth = doc.getTextWidth(dateText);
+      
+      // Pour le centrage vertical, on utilise la hauteur approximative du texte
+      const textHeight = 160 * 0.35; // Approximation en mm (0.35mm par point)
 
-    // Ajouter le texte parfaitement centré
-    doc.text(dateText, x, y);
+      // Centrer horizontalement et verticalement
+      const x = (pageWidth - textWidth) / 2;
+      const y = (pageHeight + textHeight / 2) / 2;
 
-    doc.save(`EXP-${dateText.replace('/', '-')}.pdf`);
-    setShowDateModal(false);
-    setSelectedProduct('');
+      // Ajouter le texte parfaitement centré
+      doc.text(dateText, x, y);
 
-  } catch (error) {
-    console.error('Erreur lors de la génération de la date:', error);
-    alert('Erreur lors de la génération de la date d\'expiration');
-  }
-};
+      doc.save(`EXP-${dateText.replace('/', '-')}.pdf`);
+      setShowDateModal(false);
+      setSelectedProduct('');
+
+    } catch (error) {
+      console.error('Erreur lors de la génération de la date:', error);
+      alert('Erreur lors de la génération de la date dexpiration ');
+    }
+  };
 
   // Obtenir les produits avec dates d'expiration
   const getProductsWithExpiration = () => {
@@ -333,7 +536,7 @@ export function ReceptionTable({ refreshTrigger }) {
                 {translate('table.title')}
               </h2>
               <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Liste des réceptions enregistrées
+                Liste des réceptions enregistrées - Modifiable
               </p>
             </div>
           </div>
@@ -541,7 +744,7 @@ export function ReceptionTable({ refreshTrigger }) {
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-            <table className="w-full min-w-[700px]">
+            <table className="w-full min-w-[1000px]">
               <thead>
                 <tr className="bg-gray-50 dark:bg-gray-800">
                   {[
@@ -567,6 +770,12 @@ export function ReceptionTable({ refreshTrigger }) {
                       </div>
                     </th>
                   ))}
+                  <th className="px-3 py-3 text-left text-xs sm:text-sm font-semibold text-gray-900 dark:text-white">
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <Palette className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Configuration Palette</span>
+                    </div>
+                  </th>
                   <th className="px-3 py-3 text-left text-xs sm:text-sm font-semibold text-gray-900 dark:text-white">
                     {translate('table.columns.actions')}
                   </th>
@@ -639,6 +848,9 @@ export function ReceptionTable({ refreshTrigger }) {
                       </span>
                     </td>
                     <td className="px-3 py-3">
+                      {renderPalletConfig(reception)}
+                    </td>
+                    <td className="px-3 py-3">
                       <button
                         onClick={() => handleDelete(reception.id)}
                         className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1.5 sm:p-2 rounded-lg transition-all duration-200 transform hover:scale-110"
@@ -661,7 +873,7 @@ export function ReceptionTable({ refreshTrigger }) {
                       {calculateTotalUnits().toLocaleString()} {translate('table.totalUnits').toLowerCase()}
                     </div>
                   </td>
-                  <td colSpan={6}></td>
+                  <td colSpan={8}></td>
                 </tr>
               </tbody>
             </table>
